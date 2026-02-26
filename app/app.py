@@ -5,8 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from sqlalchemy import select
 from app.images import imagekit
-# Change UploadfileRequestOptions -> UploadFileRequestOptions
-from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 import shutil
 import os
 import uuid
@@ -41,26 +39,25 @@ async def upload_file(
             temp_file_path = temp_file.name
             shutil.copyfileobj(file.file, temp_file)
 
-        upload_result = imagekit.upload_file(
+        # ImageKit v5+ syntax: upload options are passed directly as arguments
+        upload_result = imagekit.files.upload(
             file=open(temp_file_path, "rb"),
             file_name=file.filename,
-            options=UploadFileRequestOptions(
-                use_unique_file_name=True, tags=["backend upload"]
-            ),
+            use_unique_file_name=True,
+            tags=["backend upload"],
         )
 
-        if upload_result.response.http_status_code == 200:
-            # treggre other function to run after this function is done #used db in this function):
-            post2 = post(
-                caption=caption,
-                url=upload_result.url,
-                file_type="video" if file.content_type.startswith("video") else "image",
-                file_name=upload_result.name
-            )
-            session.add(post2)
-            await session.commit()
-            await session.refresh(post2)
-            return post2
+        # treggre other function to run after this function is done #used db in this function):
+        post2 = post(
+            caption=caption,
+            url=upload_result.url,
+            file_type="video" if file.content_type.startswith("video") else "image",
+            file_name=upload_result.name,
+        )
+        session.add(post2)
+        await session.commit()
+        await session.refresh(post2)
+        return post2
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
