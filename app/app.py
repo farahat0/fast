@@ -64,7 +64,7 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         # Close FastAPI's file handle first so Windows releases its lock
-        file.file.close() 
+        file.file.close()
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.unlink(temp_file_path)
@@ -90,3 +90,20 @@ async def get_feed(session: AsyncSession = Depends(get_session)):
             }
         )
     return {"posts": post_data}
+
+
+@app.delete("/delete/{id}")
+async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
+    try:
+        uuid_id = uuid.UUID(id)
+        result = await session.execute(select(post).where(post.id == uuid_id))
+        post_to_delete = result.scalar.first()
+
+        if not post_to_delete:
+            raise HTTPException(status_code=404, detail="Post not found")
+        await session.delete(post_to_delete)
+        await session.commit()
+
+        return {"detail": "Post deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
