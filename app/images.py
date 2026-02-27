@@ -10,9 +10,17 @@ imagekit = ImageKit(
     public_key=os.getenv("IMAGEKIT_PUBLIC_KEY"),
     private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
     url_endpoint=os.getenv("IMAGEKIT_URL"),)
-'''''
+
 imagekit = ImageKit(
     private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
     password=os.getenv("IMAGEKIT_PUBLIC_KEY"),
     base_url=os.getenv("IMAGEKIT_URL"),
+)
+'''''
+
+
+# CORRECT initialization for ImageKit v5+
+# The v5 SDK ONLY takes the private_key for server-side authentication
+imagekit = ImageKit(
+    private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
 )

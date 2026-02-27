@@ -40,12 +40,14 @@ async def upload_file(
             shutil.copyfileobj(file.file, temp_file)
 
         # ImageKit v5+ syntax: upload options are passed directly as arguments
-        upload_result = imagekit.files.upload(
-            file=open(temp_file_path, "rb"),
-            file_name=file.filename,
-            use_unique_file_name=True,
-            tags=["backend upload"],
-        )
+        # Using "with open" prevents the WinError 32 (file being used by another process)
+        with open(temp_file_path, "rb") as f:
+            upload_result = imagekit.files.upload(
+                file=f,
+                file_name=file.filename,
+                use_unique_file_name=True,
+                tags=["backend upload"],
+            )
 
         # treggre other function to run after this function is done #used db in this function):
         post2 = post(
@@ -61,9 +63,13 @@ async def upload_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
+        # Close FastAPI's file handle first so Windows releases its lock
+        file.file.close() 
         if temp_file_path and os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
-        file.file.close()
+            try:
+                os.unlink(temp_file_path)
+            except PermissionError:
+                pass
 
 
 # return the post data as response
