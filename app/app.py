@@ -9,7 +9,7 @@ import shutil
 import os
 import uuid
 import tempfile
-
+from sqlalchemy import delete
 
 # create a lifespan function to create the database table when the app starts and close the connection when the app stops
 @asynccontextmanager
@@ -91,7 +91,7 @@ async def get_feed(session: AsyncSession = Depends(get_session)):
         )
     return {"posts": post_data}
 
-
+'''''
 @app.delete("/delete/{id}")
 async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
     try:
@@ -106,4 +106,38 @@ async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
 
         return {"detail": "Post deleted successfully"}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+'''''
+@app.delete("/delete/{post_id}")
+async def delete_post(post_id: str, session: AsyncSession = Depends(get_session)):
+    try:
+        # FIX: Convert the string post_id from the URL into a UUID object
+        try:
+            target_uuid = uuid.UUID(post_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+        # 1. Fetch the post using the UUID object
+        result = await session.execute(select(post).where(post.id == target_uuid))
+        db_post = result.scalar_one_or_none()
+
+        if not db_post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        # 2. Delete from ImageKit using the stored file_name/ID
+        try:
+            # ImageKit v5 deletion syntax
+            imagekit.files.delete(file_id=db_post.file_name)
+        except Exception as ik_e:
+            print(f"ImageKit cleanup skipped or failed: {ik_e}")
+
+        # 3. Delete the record from the database
+        await session.delete(db_post)
+        await session.commit()
+
+        return {"message": "Post deleted successfully"}
+
+    except Exception as e:
+        await session.rollback()
+        # This will now capture the specific error if it fails again
         raise HTTPException(status_code=500, detail=str(e))
