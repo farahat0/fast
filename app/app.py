@@ -10,6 +10,9 @@ import os
 import uuid
 import tempfile
 from sqlalchemy import delete
+from app.users import auth_backend, fastapi_users, current_active_user
+from app.schema import UserRead, UserCreate, UserUpdate
+
 
 # create a lifespan function to create the database table when the app starts and close the connection when the app stops
 @asynccontextmanager
@@ -21,6 +24,24 @@ async def lifespan(app: FastAPI):
 # when the app starts it will create the database table and when the app stops it will close the connection
 app = FastAPI(lifespan=lifespan)
 # above is the code to create the database table when the app starts and close the connection when the app stops
+
+app.include_router(
+    fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
+)
+app.include_router(fastapi_users.get_register_router(UserRead, UserCreate))
+app.include_router(
+    fastapi_users.get_reset_password_router, prefix="/auth", tags=["auth"]
+)
+app.include_router(
+    fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"]
+)
+app.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate),
+    prefix="/users",
+    tags=["users"],
+)
+
+# linking the auth router to the app with the prefix /auth/jwt and the tag auth
 
 
 # to create a post endpoint to upload a file and save the post data in the database and return the post data as response
@@ -91,7 +112,8 @@ async def get_feed(session: AsyncSession = Depends(get_session)):
         )
     return {"posts": post_data}
 
-'''''
+
+"""''
 @app.delete("/delete/{id}")
 async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
     try:
@@ -107,7 +129,9 @@ async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
         return {"detail": "Post deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-'''''
+""" ""
+
+
 @app.delete("/delete/{post_id}")
 async def delete_post(post_id: str, session: AsyncSession = Depends(get_session)):
     try:
