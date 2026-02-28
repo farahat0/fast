@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from app.schema import PostCreate
-from app.db import post, create_db_table, get_session
+from app.db import post, create_db_table, get_session, User
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from sqlalchemy import select
@@ -24,13 +24,12 @@ async def lifespan(app: FastAPI):
 # when the app starts it will create the database table and when the app stops it will close the connection
 app = FastAPI(lifespan=lifespan)
 # above is the code to create the database table when the app starts and close the connection when the app stops
-
 app.include_router(
     fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
 )
-app.include_router(fastapi_users.get_register_router(UserRead, UserCreate))
+app.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"])
 app.include_router(
-    fastapi_users.get_reset_password_router, prefix="/auth", tags=["auth"]
+    fastapi_users.get_reset_password_router(), prefix="/auth", tags=["auth"]
 )
 app.include_router(
     fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"]
@@ -48,6 +47,7 @@ app.include_router(
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
+    user: User=Depends(current_active_user),
     caption: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ):
@@ -72,6 +72,7 @@ async def upload_file(
 
         # treggre other function to run after this function is done #used db in this function):
         post2 = post(
+            user_id=user.id,
             caption=caption,
             url=upload_result.url,
             file_type="video" if file.content_type.startswith("video") else "image",
@@ -95,19 +96,25 @@ async def upload_file(
 
 # return the post data as response
 @app.get("/feed")
-async def get_feed(session: AsyncSession = Depends(get_session)):
+async def get_feed(session: AsyncSession = Depends(get_session), user: User=Depends(current_active_user)):
     result = await session.execute(select(post).order_by(post.created_at.desc()))
     posts = [row[0] for row in result.all()]
+    result_by_mail= await session.execute(select(User))
+    users = [row[0] for row in result_by_mail.all()]
+    user_dict = {u.id: u.email for u in users}
     post_data = []
     for post3 in posts:
         post_data.append(
             {
                 "id": str(post3.id),
                 "caption": post3.caption,
+                "user_id": str(post3.user_id),
                 "url": post3.url,
                 "file_type": post3.file_type,
                 "file_name": post3.file_name,
                 "created_at": post3.created_at,
+                "is_owner": post3.user_id == user.id,  # Add this field to indicate if the current user is the owner of the post    
+                "user_email": user_dict.get(post3.user_id, "Unknown")
             }
         )
     return {"posts": post_data}
@@ -133,7 +140,7 @@ async def delete_post(id: str, session: AsyncSession = Depends(get_session)):
 
 
 @app.delete("/delete/{post_id}")
-async def delete_post(post_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_post(post_id: str, session: AsyncSession = Depends(get_session), user: User=Depends(current_active_user)):
     try:
         # FIX: Convert the string post_id from the URL into a UUID object
         try:
@@ -147,7 +154,8 @@ async def delete_post(post_id: str, session: AsyncSession = Depends(get_session)
 
         if not db_post:
             raise HTTPException(status_code=404, detail="Post not found")
-
+        if db_post.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this post")
         # 2. Delete from ImageKit using the stored file_name/ID
         try:
             # ImageKit v5 deletion syntax
